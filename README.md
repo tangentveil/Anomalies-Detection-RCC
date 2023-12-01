@@ -1,1 +1,1 @@
-﻿# Anomalies-Detection-RCC(Robust Random Cut Forest)
+﻿# Anomalies-Detection-RCC
