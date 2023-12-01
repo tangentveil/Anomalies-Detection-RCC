@@ -1,14 +1,19 @@
+# Streaming Exponential Average
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-class StreamingMovingAnomalyDetector:
-    def __init__(self, method='MAD', threshold=1.5) -> None:
+class StreamingExponentialMovingAverage:
+    '''Exponential Weighted Moving Average (EWMA) algorithm'''
+    # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.Series.ewm.html
+
+    def __init__(self, threshold=1.5, alpha=0.3) -> None:
         # Initialize data stream
         self.data_streaming = []
         # Parameters
         self.max_deviation_from_expected = threshold
-        self.method = method.lower()  # Convert method to lowercase for case-insensitivity
+        self.alpha = alpha
 
     def add_data_point(self, value):
         # Add new data point to the streaming data
@@ -18,39 +23,26 @@ class StreamingMovingAnomalyDetector:
         '''Check if there is enough data'''
         return len(self.data_streaming) > 0
 
-    def _calculate_deviation(self) -> float:
-        '''Calculate the deviation based on the chosen method'''
+    def _expected_value(self, timestamp: int) -> float:
+        '''Return the expected value'''
         data = pd.Series(data=self.data_streaming, dtype=float)
-
-        if self.method == 'mad':
-            # Median Absolute Deviation (MAD)
-            median = np.median(data)
-            mad = np.median(np.abs(data - median))
-            return mad
-        elif self.method == 'trimean':
-            # Trimean
-            return (np.quantile(data, 0.25) + (2 * np.quantile(data, 0.50)) + np.quantile(data, 0.75)) / 4
-        else:
-            raise ValueError("Invalid method. Choose either 'MAD' or 'Trimean'.")
-
-    def _expected_value(self) -> float:
-        '''Return the expected value based on the chosen method'''
-        data = pd.Series(data=self.data_streaming, dtype=float)
-
-        if self.method == 'mad':
-            # Median
-            return np.median(data)
-        elif self.method == 'trimean':
-            # Trimean
-            return (np.quantile(data, 0.25) + np.quantile(data, 0.50) + np.quantile(data, 0.75)) / 3
+        return data.ewm(alpha=self.alpha, adjust=True).mean().iloc[-1]
 
     def detect_anomaly(self, value):
         if self._enough_data():
-            expected_value = self._expected_value()
-            deviation = np.abs(value - expected_value)
-            if deviation > self.max_deviation_from_expected * self._calculate_deviation():
+            expected_value = self._expected_value(len(self.data_streaming))
+            deviation = abs(value - expected_value)
+            if deviation > self.max_deviation_from_expected * np.std(self.data_streaming):
                 return 1  # Anomaly detected
         return 0  # No anomaly
+
+    def stream_data_and_detect_anomalies(self, data_stream):
+        anomalies = []
+        for value in data_stream:
+            self.add_data_point(value)
+            anomaly = self.detect_anomaly(value)
+            anomalies.append(anomaly)
+        return anomalies
 
 def generate_data_point(period=50, amplitude=5, noise_factor=1.0):
     # Regular pattern
@@ -65,20 +57,33 @@ def generate_data_point(period=50, amplitude=5, noise_factor=1.0):
     # Combine components to generate data point
     return regular_pattern + seasonal_element + random_noise
 
+class StreamingMovingAverage:
+    def __init__(self) -> None:
+        # Initialize data stream
+        self.data_streaming = []
+
+    def add_data_point(self, value):
+        # Add new data point to the streaming data
+        self.data_streaming.append(value)
+
+    def detect_anomaly(self, value):
+        # Override this method in the derived class for specific anomaly detection
+        pass
+
 def continuous_plot_anomalies(algorithm, parameters, iterations=200, pause_duration=0.1):
     # Initialize the algorithm
     anomaly_detector = algorithm(**parameters)
 
     # Set up the plot
     plt.figure(figsize=(10, 6))
-    plt.title(f'Streaming Moving {anomaly_detector.method.capitalize()} Anomaly Detection')
+    plt.title('Streaming Moving EWMA Anomaly Detection')
     plt.xlabel('Time')
     plt.ylabel('Value')
 
     # Continuously stream data, detect anomalies, and update the plot
     for _ in range(iterations):
         data_point = generate_data_point()
-        anomaly_labels = anomaly_detector.detect_anomaly(data_point)
+        anomaly_labels = anomaly_detector.stream_data_and_detect_anomalies([data_point])
 
         # Update the streaming data
         anomaly_detector.add_data_point(data_point)
@@ -87,7 +92,7 @@ def continuous_plot_anomalies(algorithm, parameters, iterations=200, pause_durat
         plt.plot(anomaly_detector.data_streaming, label='Data Stream')
 
         # Check if there are any anomalies
-        if anomaly_labels:
+        if any(anomaly_labels):
             # Plot the anomalies
             plt.scatter(len(anomaly_detector.data_streaming) - 1, data_point, color='red', label='Anomalies')
 
@@ -98,9 +103,9 @@ def continuous_plot_anomalies(algorithm, parameters, iterations=200, pause_durat
 # Initialize an empty data stream
 data_stream = []
 
-# Example parameters for the StreamingMovingAnomalyDetector
-algorithm = StreamingMovingAnomalyDetector
-parameters = {'method': 'MAD', 'threshold': 1.5}
+# Example parameters for the StreamingExponentialMovingAverage algorithm
+algorithm = StreamingExponentialMovingAverage
+parameters = {'threshold': 2.0, 'alpha': 0.3}
 
 # Run the continuous streaming and visualization
 continuous_plot_anomalies(algorithm, parameters)
